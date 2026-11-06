@@ -1,34 +1,17 @@
 <!DOCTYPE html>
 <html lang="fr">
- <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyD9ePnTAHR7Tv-d5EA6LoTqOjk64GosouY",
-    authDomain: "tempspro-4ecc1.firebaseapp.com",
-    projectId: "tempspro-4ecc1",
-    storageBucket: "tempspro-4ecc1.firebasestorage.app",
-    messagingSenderId: "841729716926",
-    appId: "1:841729716926:web:7279277db56e999f0aa4ef",
-    measurementId: "G-DVCBCMNRQ5"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>TempsPro – Planning</title>
+
+<!-- Firebase App (Core SDK) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<!-- Firebase Realtime Database -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
 <style>
 :root{--bg:#f1f5f9;--card:#fff;--tx:#0f172a;--mut:#64748b;--bd:#e2e8f0;--ac:#4f46e5;--ok:#059669;--ko:#e11d48;--wa:#b45309;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--mut:#94a3b8;--bd:#334155;--ac:#6366f1;--ok:#34d399;--ko:#fb7185;--wa:#fbbf24;color-scheme:dark}}
@@ -74,18 +57,28 @@ canvas{width:100%;height:130px;background:var(--bg);border:1px solid var(--bd);b
 <main id="view"></main>
 
 <script>
+// --- CONFIGURATION FIREBASE ---
+const firebaseConfig = {
+  apiKey: "AIzaSyD9ePnTAHR7tv-d5EA6LoTqOjk64GosouY",
+  authDomain: "tempspro-4ecc1.firebaseapp.com",
+  projectId: "tempspro-4ecc1",
+  storageBucket: "tempspro-4ecc1.appspot.com",
+  messagingSenderId: "841729716926",
+  appId: "1:841729716926:web:7279277db56e999f0aa4ef",
+  measurementId: "G-DVBCMNRQ5"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
 const $=id=>document.getElementById(id);
 const toast=m=>{const t=document.createElement('div');t.textContent=m;t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:12px;z-index:99;max-width:90%;text-align:center';document.body.appendChild(t);setTimeout(()=>t.remove(),3200)};
 let askCb;const ask=(m,cb)=>{askCb=cb;openM(`<b>${esc(m)}</b><div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="closeM()">Annuler</button><button class="btn dng" onclick="closeM();askCb()">Confirmer</button></div>`)};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S={emps:[],shifts:[],reqs:[],sigs:{},pub:{},cfg:{pin:'1234',coef:1.42,store:'Carrefour City Vidal',depts:['Caisse','Rayon','Réception','Boulangerie'],contracts:['CDI 35h','CDI 30h','CDD 35h','Étudiant 15h'],tpls:[]}};
-// Listes « Poste » et « Contrat » modifiables par le manager (synchronisées avec les réglages)
 const DEPTS=()=>S.cfg.depts,CONTRACTS=()=>S.cfg.contracts,LISTS={depts:'poste',contracts:'contrat'};
 const opts=(list,cur,add)=>[...list,...(cur&&!list.includes(cur)?[cur]:[])].map(d=>`<option value="${esc(d)}"${d==cur?' selected':''}>${esc(d)}</option>`).join('')+(add?'<option value="__new">+ Ajouter…</option>':'');
 function addItem(k,v){v=(v||'').trim();if(!v)return false;if(S.cfg[k].some(x=>x.toLowerCase()===v.toLowerCase()))return true;S.cfg[k]=[...S.cfg[k],v];return true}
-// Reprise automatique des données enregistrées sous l'ancien nom (SkellPro)
-const LSget=k=>{try{const v=localStorage.getItem('tempspro'+k);return v!==null?v:localStorage.getItem('skellpro'+k)}catch(e){return null}};
-try{const l=JSON.parse(LSget('')||'null');if(l)S={...S,...l,cfg:{...S.cfg,...l.cfg}}}catch(e){}
+
 let user=null,tab='plan',rl='m',pin='',empSel='',wk=mon(new Date()),filt='all';
 
 /* ---------- dates ---------- */
@@ -104,41 +97,40 @@ const f1=n=>n.toFixed(1).replace('.',',')+' h',eur=n=>n.toLocaleString('fr-FR',{
 const weekShifts=e=>S.shifts.filter(s=>keys().includes(s.date)&&(!e||s.emp===e));
 const leave=(e,d)=>S.reqs.find(r=>r.emp===e&&r.st==='Approuvé'&&r.from<=d&&d<=r.to);
 
-/* ---------- conformité (règles de l'appli d'origine : 10 h/jour, 11 h de repos, 48 h/semaine) ---------- */
+/* ---------- conformité ---------- */
 function alerts(){const o=[];S.emps.forEach(e=>{const l=weekShifts(e.id).sort((x,y)=>span(x)[0]-span(y)[0]);const t=l.reduce((n,s)=>n+dur(s),0);
  if(t>48)o.push(`${e.name} : ${f1(t)} sur la semaine (max 48 h)`);
  l.forEach((s,i)=>{if(dur(s)>10)o.push(`${e.name} : ${f1(dur(s))} le ${fd(s.date)} (max 10 h)`);
   if(i&&(span(s)[0]-span(l[i-1])[1])/36e5<11)o.push(`${e.name} : moins de 11 h de repos avant le ${fd(s.date)}`);
   if(leave(e.id,s.date))o.push(`${e.name} : shift le ${fd(s.date)} pendant un congé approuvé`)})});return o}
 
-/* ---------- stockage : local + synchro équipe (serveur Netlify) ---------- */
-// ver = version serveur connue, base = dernier état synchronisé (pour fusionner en cas de modifications simultanées)
-let ver=+(LSget('_v')||0),base=null,dirty=false,busy=false;
-try{base=JSON.parse(LSget('_base')||'null')}catch(e){}
+/* ---------- STOCKAGE FIREBASE TEMPS RÉEL ---------- */
 const setSync=t=>$('sync').textContent=t;
-const keep=()=>{try{localStorage.setItem('tempspro',JSON.stringify(S));localStorage.setItem('tempspro_v',ver);localStorage.setItem('tempspro_base',JSON.stringify(base))}catch(e){}};
-function save(){dirty=true;keep();render();push()}
-// Fusion 3 voies : applique sur l'état distant uniquement ce que cet appareil a modifié depuis "base".
-function mergeColl(b,l,r){const arr=Array.isArray(r)||Array.isArray(l),toM=x=>Array.isArray(x)?Object.fromEntries(x.map(o=>[o.id,o])):{...(x||{})};
- const B=toM(b),L=toM(l),R=toM(r),J=JSON.stringify;
- for(const k in L)if(J(L[k])!==J(B[k]))R[k]=L[k];for(const k in B)if(!(k in L))delete R[k];return arr?Object.values(R):R}
-function merge(b,l,r){b=b||{};const o={...r};for(const k of ['emps','shifts','reqs','sigs','pub','cfg'])o[k]=mergeColl(b[k],l[k],r[k]);return o}
-function adopt(json,v){const n=JSON.parse(json);S={...S,...n,cfg:{...S.cfg,...n.cfg}};base=JSON.parse(JSON.stringify(S));ver=v;keep();
- if(user&&$('modal').classList.contains('hide'))render();else if(!user)loginUI()}
-async function push(){if(busy||!dirty)return;busy=true;setSync('Synchronisation…');
- try{for(let i=0;i<5&&dirty;i++){const j=JSON.stringify(S);
-  const r=await fetch('/api/state',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({base:ver,json:j})});
-  if(r.ok){ver=(await r.json()).v;base=JSON.parse(j);if(JSON.stringify(S)===j)dirty=false;keep();continue}
-  if(r.status==409){const d=await r.json();const rem=JSON.parse(d.json);const m=merge(base,S,rem);S={...S,...m,cfg:{...S.cfg,...m.cfg}};base=rem;ver=d.v;keep();render();continue}
-  throw new Error(r.status)}
-  setSync(dirty?'En attente de synchro':'Synchronisé')}catch(e){setSync('Hors ligne – réessai…')}finally{busy=false}}
-async function pull(){if(busy)return;if(dirty)return push();
- try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw 0;const d=await r.json();
-  if(!d.json){if(S.emps.length){dirty=true;ver=0;push()}else setSync('Synchronisé');return}
-  if(d.v!==ver)adopt(d.json,d.v);setSync('Synchronisé')}catch(e){setSync('Hors ligne – réessai…')}}
-pull();setInterval(pull,5000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)pull()});
-window.addEventListener('online',pull);
+let busy=false;
+
+function save(){
+  setSync('Enregistrement…');
+  db.ref('state').set(S).then(()=>{
+    setSync('Synchronisé');
+  }).catch((error)=>{
+    setSync('Erreur synchro');
+    console.error(error);
+  });
+}
+
+// Écoute en temps réel des changements depuis Firebase
+db.ref('state').on('value', (snapshot) => {
+  const val = snapshot.val();
+  if (val) {
+    S = {...S, ...val, cfg:{...S.cfg, ...val.cfg}};
+    if(user && $('modal').classList.contains('hide')) render();
+    else if(!user) loginUI();
+  }
+  setSync('Synchronisé');
+}, (error) => {
+  setSync('Hors ligne');
+  console.error(error);
+});
 
 /* ---------- connexion ---------- */
 function loginUI(){if(!S.emps.some(e=>e.id===empSel))empSel=S.emps[0]?.id||'';const o=S.emps.map(e=>`<option value="${esc(e.id)}"${e.id===empSel?' selected':''}>${esc(e.name)}</option>`).join('');
